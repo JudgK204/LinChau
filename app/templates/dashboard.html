@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Clean frontend extracted from LinChau Floral Local V1.1 Demo">
+  <title>LinChau Floral · Frontend</title>
+  <link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/style.css') }}"
+>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><div class="brand-mark">LF</div><div><strong>LinChau Floral</strong><span>Local V1.1 · Excel Ready</span></div></div>
+    <nav class="nav">
+      <button class="nav-item active" data-nav="dashboard">Tổng quan</button>
+      <button class="nav-item" data-nav="orders">Đơn hàng</button>
+      <button class="nav-item" data-nav="customers">Khách hàng</button>
+      <button class="nav-item" data-nav="inventory">Kho nguyên liệu</button>
+      <button class="nav-item" data-nav="movements">Biến động kho</button>
+      <button class="nav-item" data-nav="workflow">Sản xuất & giao</button>
+      <button class="nav-item" data-nav="data">Excel & sao lưu</button>
+    </nav>
+    <div class="sidebar-foot"><span>Chế độ dữ liệu</span><strong>Một máy · lưu cục bộ</strong><small>Không cần cloud</small></div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button id="menuBtn" class="icon-btn" aria-label="Mở menu">☰</button>
+      <div><h1 id="viewTitle">Tổng quan</h1><p id="todayLabel"></p></div>
+      <div class="top-actions"><button id="quickExcelBtn" class="btn ghost">Xuất Excel</button><button id="installBtn" class="btn primary" hidden>Cài ứng dụng</button></div>
+    </header>
+
+    <section id="dashboard" class="view active" data-view="dashboard">
+      <div class="notice"><strong>Dữ liệu lưu tại máy ở quán.</div>
+      <div class="cards" id="kpiCards"></div>
+      <div class="grid-2">
+        <div class="panel"><div class="panel-head"><h2>Đơn cần xử lý</h2><button class="link-btn" data-go="orders">Xem đơn hàng</button></div><div id="priorityOrders" class="stack-list"></div></div>
+        <div class="panel"><div class="panel-head"><h2>Cảnh báo kho</h2><button class="link-btn" data-go="inventory">Xem kho</button></div><div id="lowStockList" class="stack-list"></div></div>
+      </div>
+      <div class="grid-2">
+        <div class="panel"><div class="panel-head"><h2>Doanh thu 7 ngày</h2></div><div id="salesBars" class="bar-chart"></div></div>
+        <div class="panel"><div class="panel-head"><h2>Trạng thái đơn</h2></div><div id="statusSummary" class="status-summary"></div></div>
+      </div>
+    </section>
+
+    <section id="orders" class="view" data-view="orders">
+
+      <div class="toolbar wrap">
+
+        <div class="filters">
+
+          <input
+            id="orderSearch"
+            class="input"
+            placeholder="Tìm mã đơn / khách / SĐT..."
+          />
+
+          <select
+            id="orderStatusFilter"
+            class="input"
+          >
+            <option value="">
+              Tất cả trạng thái
+            </option>
+          </select>
+
+          <input
+            id="orderFrom"
+            class="input"
+            type="date"
+            title="Từ ngày nhận"
+          />
+
+          <input
+            id="orderTo"
+            class="input"
+            type="date"
+            title="Đến ngày nhận"
+          />
+
+        </div>
+
+        <div class="toolbar-actions">
+
+          <button
+            id="exportFilteredOrdersBtn"
+            class="btn ghost"
+          >
+            Xuất danh sách đang lọc
+          </button>
+
+          <button
+            id="newOrderBtn"
+            class="btn primary"
+          >
+            + Tạo đơn
+          </button>
+
+        </div>
+
+      </div>
+
+
+      <div class="panel table-panel">
+
+        <div class="table-wrap">
+
+          <table>
+
+            <thead>
+
+              <tr>
+
+                <th>Mã đơn</th>
+                <th>Khách hàng</th>
+                <th>Sản phẩm</th>
+                <th>Ngày giao</th>
+                <th>Tiền hàng</th>
+                <th>Giảm</th>
+                <th>Tổng</th>
+                <th>Còn lại</th>
+                <th>Trạng thái</th>
+                <th>Thanh toán</th>
+                <th></th>
+
+              </tr>
+
+            </thead>
+
+            <tbody id="ordersBody"></tbody>
+
+          </table>
+
+        </div>
+
+
+        <!-- PHÂN TRANG ĐƠN HÀNG -->
+
+        <div
+          id="orderPagination"
+          class="pagination"
+        ></div>
+
+      </div>
+
+    </section>
+
+    <section id="customers" class="view" data-view="customers">
+      <div class="toolbar">
+        <input
+          id="customerSearch"
+          class="input"
+          placeholder="Tìm khách hàng / SĐT..."
+        />
+
+        <div class="toolbar-actions">
+          <button
+            id="exportCustomersBtn"
+            class="btn ghost"
+          >
+            Xuất danh sách đang lọc
+          </button>
+
+          <button
+            id="newCustomerBtn"
+            class="btn primary"
+          >
+            + Thêm khách
+          </button>
+        </div>
+      </div>
+
+      <div class="panel table-panel">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Mã KH</th>
+                <th>Khách hàng</th>
+                <th>SĐT</th>
+                <th>Sở thích</th>
+                <th>Dịp thường mua</th>
+                <th>Số đơn</th>
+                <th>Tổng mua</th>
+                <th></th>
+              </tr>
+            </thead>
+
+            <tbody id="customersBody"></tbody>
+          </table>
+        </div>
+
+        <!-- PHÂN TRANG KHÁCH HÀNG -->
+        <div
+          id="customersPagination"
+          class="pagination"
+        ></div>
+      </div>
+    </section>
+
+    <section id="inventory" class="view" data-view="inventory">
+      <div class="toolbar">
+        <input
+          id="inventorySearch"
+          class="input"
+          placeholder="Tìm nguyên liệu..."
+        />
+
+        <div class="toolbar-actions">
+          <button
+            id="exportInventoryBtn"
+            class="btn ghost"
+          >
+            Xuất danh sách đang lọc
+          </button>
+
+          <button
+            id="movementBtn"
+            class="btn ghost"
+          >
+            + Nhập / xuất kho
+          </button>
+
+          <button
+            id="newItemBtn"
+            class="btn primary"
+          >
+            + Thêm nguyên liệu
+          </button>
+        </div>
+      </div>
+
+      <div class="panel table-panel">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Mã NVL</th>
+                <th>Nguyên liệu</th>
+                <th>Nhóm</th>
+                <th>Tồn</th>
+                <th>Mức tối thiểu</th>
+                <th>Giá nhập</th>
+                <th>Giá trị tồn</th>
+                <th>Trạng thái</th>
+                <th>Thanh toán</th>
+                <th></th>
+              </tr>
+            </thead>
+
+            <tbody id="inventoryBody"></tbody>
+          </table>
+        </div>
+
+        <!-- PHÂN TRANG KHO NGUYÊN LIỆU -->
+        <div
+          id="inventoryPagination"
+          class="pagination"
+        ></div>
+      </div>
+    </section>
+
+    <section id="movements" class="view" data-view="movements">
+
+      <div class="toolbar wrap">
+
+        <div class="filters">
+
+          <input
+            id="movementSearch"
+            class="input"
+            placeholder="Tìm mã / nguyên liệu / ghi chú..."
+          />
+
+          <select
+            id="movementTypeFilter"
+            class="input"
+          >
+            <option value="">Tất cả loại</option>
+            <option value="in">Nhập kho</option>
+            <option value="out">Xuất kho</option>
+            <option value="waste">Hao hụt / hỏng</option>
+          </select>
+
+        </div>
+
+        <div class="toolbar-actions">
+
+          <button
+            id="exportMovementsBtn"
+            class="btn ghost"
+          >
+            Xuất danh sách đang lọc
+          </button>
+
+          <button
+            id="movementBtn2"
+            class="btn primary"
+          >
+            + Ghi biến động
+          </button>
+
+        </div>
+
+      </div>
+
+
+      <div class="panel table-panel">
+
+        <div class="table-wrap">
+
+          <table>
+
+            <thead>
+
+              <tr>
+                <th>Ngày</th>
+                <th>Mã giao dịch</th>
+                <th>Loại</th>
+                <th>Mã NVL</th>
+                <th>Nguyên liệu</th>
+                <th>Số lượng</th>
+                <th>Giá tham chiếu</th>
+                <th>Giá trị</th>
+                <th>Ghi chú</th>
+              </tr>
+
+            </thead>
+
+            <tbody id="movementsBody"></tbody>
+
+          </table>
+
+        </div>
+
+
+        <!-- PHÂN TRANG BIẾN ĐỘNG KHO -->
+
+        <div
+          id="movementsPagination"
+          class="pagination"
+        ></div>
+
+      </div>
+
+    </section>
+
+    <section id="workflow" class="view" data-view="workflow">
+
+      <div class="workflow-toolbar">
+
+        <div class="workflow-search">
+          <input
+            type="text"
+            id="workflowOrderSearch"
+            placeholder="Tìm mã đơn hàng..."
+            autocomplete="off"
+          >
+        </div>
+
+      </div>
+
+      <div
+        class="workflow-grid"
+        id="workflowBoard"
+      ></div>
+
+    </section>
+
+    <section id="data" class="view" data-view="data">
+      <div class="export-hero panel"><div><span class="eyebrow">XUẤT DỮ LIỆU CHUẨN EXCEL</span><h2>1 nút tạo workbook nhiều sheet</h2><p class="muted">File .xlsx được tạo trực tiếp trên máy, không gửi dữ liệu ra Internet.</p></div><button id="exportAllExcelBtn" class="btn primary big">Xuất toàn bộ Excel</button></div>
+      <div class="export-grid">
+        <div class="export-card"><strong>Đơn hàng</strong><span>Đầy đủ khách, giảm giá, thanh toán, giao hàng.</span><button id="exportOrdersBtn" class="btn ghost">Xuất Don_Hang.xlsx</button></div>
+        <div class="export-card"><strong>Khách hàng</strong><span>Kèm số đơn, tổng mua và lần mua gần nhất.</span><button id="exportCustomersBtn2" class="btn ghost">Xuất Khach_Hang.xlsx</button></div>
+        <div class="export-card"><strong>Kho & biến động</strong><span>Tồn kho hiện tại và lịch sử nhập/xuất/hao hụt.</span><button id="exportStockBtn" class="btn ghost">Xuất Kho.xlsx</button></div>
+        <div class="export-card"><strong>Sản xuất & giao</strong><span>Lịch giao và trạng thái xử lý từng đơn.</span><button id="exportWorkflowBtn" class="btn ghost">Xuất San_Xuat_Giao.xlsx</button></div>
+      </div>
+      <div class="grid-2">
+        <div class="panel"><h2>Sao lưu toàn bộ dữ liệu</h2><p class="muted">JSON là bản sao lưu để khôi phục app. Excel dùng để xem, lọc, báo cáo; JSON dùng để khôi phục nguyên trạng.</p><button id="backupJsonBtn" class="btn ghost">Tải bản sao lưu JSON</button></div>
+        <div class="panel"><h2>Khôi phục từ JSON</h2><p class="muted">Dữ liệu hiện tại sẽ được thay thế sau khi bạn xác nhận.</p><label class="btn ghost file-label">Chọn tệp sao lưu<input id="importInput" type="file" accept="application/json" hidden /></label></div>
+      </div>
+      <div class="panel data-health"><h2>Tình trạng dữ liệu</h2><div id="dataHealth"></div></div>
+    </section>
+  </main>
+</div>
+
+<div class="modal" id="modal" aria-hidden="true"><div class="modal-backdrop" data-close-modal></div><div class="modal-card"><div class="modal-head"><h2 id="modalTitle"></h2><button class="icon-btn" data-close-modal>✕</button></div><form id="modalForm"><div id="modalBody"></div><div class="modal-actions"><button type="button" class="btn ghost" data-close-modal>Hủy</button><button type="submit" class="btn primary">Lưu</button></div></form></div></div>
+<div id="toast" class="toast"></div>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/orders.js') }}"></script>
+<script src="{{ url_for('static', filename='js/inventory.js') }}"></script>
+<script src="{{ url_for('static', filename='js/movements.js') }}"></script>
+<script src="{{ url_for('static', filename='js/workflow.js') }}"></script>
+<script src="{{ url_for('static', filename='js/data.js') }}"></script>
+</body>
+</html>
