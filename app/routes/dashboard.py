@@ -1,3 +1,4 @@
+
 from flask import Blueprint, render_template, jsonify
 from sqlalchemy import text
 from app.models import db
@@ -24,7 +25,18 @@ def dashboard():
 def dashboard_api():
 
     today = date.today()
+    tomorrow = today + timedelta(days=1)
+
     month_start = today.replace(day=1)
+
+    if today.month == 12:
+        next_month_start = date(today.year + 1, 1, 1)
+    else:
+        next_month_start = date(today.year, today.month + 1, 1)
+
+    year_start = date(today.year, 1, 1)
+    next_year_start = date(today.year + 1, 1, 1)
+
     seven_days_start = today - timedelta(days=6)
 
     # -----------------------------------------------------
@@ -35,36 +47,109 @@ def dashboard_api():
         text("""
             SELECT COUNT(*)
             FROM orders
-            WHERE created = :today
+            WHERE created >= :today
+              AND created < :tomorrow
               AND status <> N'Hủy'
         """),
         {
-            "today": today
+            "today": today,
+            "tomorrow": tomorrow
         }
     ).scalar() or 0
 
+    # -----------------------------------------------------
+    # 2. Doanh thu ngày
+    #
+    # Đơn hợp lệ: tính total
+    # Đơn hủy: chỉ tính deposit
+    # Chờ xác nhận: không tính
+    # -----------------------------------------------------
+
+    daily_sales = db.session.execute(
+        text("""
+            SELECT COALESCE(
+                SUM(
+                    CASE
+                        WHEN status = N'Hủy'
+                            THEN COALESCE(deposit, 0)
+
+                        WHEN status = N'Chờ xác nhận'
+                            THEN 0
+
+                        ELSE COALESCE(total, 0)
+                    END
+                ), 0
+            )
+            FROM orders
+            WHERE created >= :start_date
+              AND created < :end_date
+        """),
+        {
+            "start_date": today,
+            "end_date": tomorrow
+        }
+    ).scalar() or 0
 
     # -----------------------------------------------------
-    # 2. Doanh thu tháng
+    # 3. Doanh thu tháng
     # -----------------------------------------------------
 
     monthly_sales = db.session.execute(
         text("""
-            SELECT COALESCE(SUM(total), 0)
+            SELECT COALESCE(
+                SUM(
+                    CASE
+                        WHEN status = N'Hủy'
+                            THEN COALESCE(deposit, 0)
+
+                        WHEN status = N'Chờ xác nhận'
+                            THEN 0
+
+                        ELSE COALESCE(total, 0)
+                    END
+                ), 0
+            )
             FROM orders
-            WHERE created >= :month_start
-              AND created <= :today
-              AND status <> N'Hủy'
+            WHERE created >= :start_date
+              AND created < :end_date
         """),
         {
-            "month_start": month_start,
-            "today": today
+            "start_date": month_start,
+            "end_date": next_month_start
         }
     ).scalar() or 0
 
+    # -----------------------------------------------------
+    # 4. Doanh thu năm
+    # -----------------------------------------------------
+
+    yearly_sales = db.session.execute(
+        text("""
+            SELECT COALESCE(
+                SUM(
+                    CASE
+                        WHEN status = N'Hủy'
+                            THEN COALESCE(deposit, 0)
+
+                        WHEN status = N'Chờ xác nhận'
+                            THEN 0
+
+                        ELSE COALESCE(total, 0)
+                    END
+                ), 0
+            )
+            FROM orders
+            WHERE created >= :start_date
+              AND created < :end_date
+        """),
+        {
+            "start_date": year_start,
+            "end_date": next_year_start
+        }
+    ).scalar() or 0
 
     # -----------------------------------------------------
-    # 3. Còn phải thu
+    # 5. Còn phải thu
     # -----------------------------------------------------
 
     receivable = db.session.execute(
@@ -75,9 +160,8 @@ def dashboard_api():
         """)
     ).scalar() or 0
 
-
     # -----------------------------------------------------
-    # 4. Nguyên liệu cần nhập
+    # 6. Nguyên liệu cần nhập
     # -----------------------------------------------------
 
     low_stock_count = db.session.execute(
@@ -88,9 +172,8 @@ def dashboard_api():
         """)
     ).scalar() or 0
 
-
     # -----------------------------------------------------
-    # 5. Đơn cần xử lý
+    # 7. Đơn cần xử lý
     # -----------------------------------------------------
 
     priority_rows = db.session.execute(
@@ -105,19 +188,16 @@ def dashboard_api():
             FROM orders o
             LEFT JOIN customers c
                 ON c.id = o.customer_id
-            WHERE o.status NOT IN
-                (N'Đã giao', N'Hủy')
+            WHERE o.status NOT IN (N'Đã giao', N'Hủy')
             ORDER BY
                 o.delivery_date ASC,
                 o.delivery_time ASC
         """)
     ).mappings().all()
 
-
     priority_orders = []
 
     for row in priority_rows:
-
         priority_orders.append({
             "id": row["id"],
             "product": row["product"] or "",
@@ -135,9 +215,8 @@ def dashboard_api():
             "customer_name": row["customer_name"] or "Khách lẻ"
         })
 
-
     # -----------------------------------------------------
-    # 6. Cảnh báo kho
+    # 8. Cảnh báo kho
     # -----------------------------------------------------
 
     low_stock_rows = db.session.execute(
@@ -154,52 +233,59 @@ def dashboard_api():
         """)
     ).mappings().all()
 
-
     low_stock = []
 
     for row in low_stock_rows:
-
         low_stock.append({
             "id": row["id"],
-            "name": row["name"],
+            "name": row["name"] or "",
             "unit": row["unit"] or "",
             "stock": float(row["stock"] or 0),
             "min_stock": float(row["min_stock"] or 0)
         })
 
-
     # -----------------------------------------------------
-    # 7. Doanh thu 7 ngày
+    # 9. Doanh thu 7 ngày
+    # Dùng cùng quy tắc với doanh thu ngày/tháng/năm
     # -----------------------------------------------------
 
     sales_rows = db.session.execute(
         text("""
             SELECT
-                created,
-                COALESCE(SUM(total), 0) AS total
+                CAST(created AS DATE) AS sales_date,
+                COALESCE(
+                    SUM(
+                        CASE
+                            WHEN status = N'Hủy'
+                                THEN COALESCE(deposit, 0)
+
+                            WHEN status = N'Chờ xác nhận'
+                                THEN 0
+
+                            ELSE COALESCE(total, 0)
+                        END
+                    ), 0
+                ) AS total
             FROM orders
             WHERE created >= :start_date
-              AND created <= :today
-              AND status <> N'Hủy'
-            GROUP BY created
-            ORDER BY created
+              AND created < :end_date
+            GROUP BY CAST(created AS DATE)
+            ORDER BY CAST(created AS DATE)
         """),
         {
             "start_date": seven_days_start,
-            "today": today
+            "end_date": tomorrow
         }
     ).mappings().all()
 
-
     sales_map = {
-        row["created"].isoformat(): float(row["total"] or 0)
+        row["sales_date"].isoformat(): float(row["total"] or 0)
         for row in sales_rows
     }
 
     sales_7_days = []
 
     for i in range(7):
-
         d = seven_days_start + timedelta(days=i)
 
         sales_7_days.append({
@@ -207,9 +293,8 @@ def dashboard_api():
             "total": sales_map.get(d.isoformat(), 0)
         })
 
-
     # -----------------------------------------------------
-    # 8. Trạng thái đơn
+    # 10. Trạng thái đơn
     # -----------------------------------------------------
 
     status_rows = db.session.execute(
@@ -222,7 +307,6 @@ def dashboard_api():
         """)
     ).mappings().all()
 
-
     status_summary = [
         {
             "status": row["status"] or "",
@@ -231,27 +315,24 @@ def dashboard_api():
         for row in status_rows
     ]
 
-
     # -----------------------------------------------------
     # RESPONSE
     # -----------------------------------------------------
 
     return jsonify({
-
         "today": today.isoformat(),
 
         "kpi": {
             "orders_today": int(orders_today),
+            "daily_sales": float(daily_sales),
             "monthly_sales": float(monthly_sales),
+            "yearly_sales": float(yearly_sales),
             "receivable": float(receivable),
             "low_stock": int(low_stock_count)
         },
 
         "priority_orders": priority_orders,
-
         "low_stock_items": low_stock,
-
         "sales_7_days": sales_7_days,
-
         "status_summary": status_summary
     })

@@ -116,6 +116,11 @@ async function loadOrders() {
             .getElementById("orderStatusFilter")
             ?.value || "";
 
+    const paymentStatus =
+    document
+        .getElementById("orderPaymentFilter")
+        ?.value || "";
+
     const dateFrom =
         document
             .getElementById("orderFrom")
@@ -137,6 +142,10 @@ async function loadOrders() {
 
     if (status) {
         params.set("status", status);
+    }
+
+    if (paymentStatus) {
+        params.set("payment_status", paymentStatus);
     }
 
     if (dateFrom) {
@@ -2855,6 +2864,10 @@ function initOrders() {
             loadOrders
         );
 
+    // Payment status
+    document
+        .getElementById("orderPaymentFilter")
+        ?.addEventListener("change", loadOrders);
 
     // Date from
     document

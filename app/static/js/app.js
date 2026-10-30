@@ -331,59 +331,80 @@
     // =====================================================
 
     function renderKpi(data) {
+        const element = document.getElementById("kpiCards");
+        if (!element) return;
 
-        const element =
-            document.getElementById(
-                "kpiCards"
-            );
+        const kpi = data.kpi || {};
 
+        const cards = [
+            {
+                icon: "↗",
+                label: "Doanh thu ngày",
+                value: money(kpi.daily_sales),
+                unit: "",
+                note: "Theo ngày tạo đơn",
+                theme: "green"
+            },
+            {
+                icon: "▤",
+                label: "Doanh thu tháng",
+                value: money(kpi.monthly_sales),
+                unit: "",
+                note: "Lũy kế tháng hiện tại",
+                theme: "purple"
+            },
+            {
+                icon: "✳",
+                label: "Doanh thu năm",
+                value: money(kpi.yearly_sales),
+                unit: "",
+                note: "Lũy kế năm hiện tại",
+                theme: "orange"
+            },
+                        {
+                icon: "▦",
+                label: "Đơn hôm nay",
+                value: Number(kpi.orders_today || 0).toLocaleString("vi-VN"),
+                unit: "đơn hàng",
+                note: "Đơn được tạo hôm nay",
+                theme: "mint"
+            },
+            {
+                icon: "₫",
+                label: "Còn phải thu",
+                value: money(kpi.receivable),
+                unit: "",
+                note: "Công nợ các đơn hàng",
+                theme: "blue"
+            },
+            {
+                icon: "!",
+                label: "Cảnh báo tồn kho",
+                value: Number(kpi.low_stock || 0).toLocaleString("vi-VN"),
+                unit: "nguyên liệu",
+                note: "Cần kiểm tra hoặc nhập thêm",
+                theme: "rose"
+            }
+        ];
 
-        if (!element) {
-            return;
-        }
+        element.innerHTML = cards.map(card => `
+            <article class="kpi kpi-${card.theme}">
+                <div class="kpi-top">
+                    <span class="kpi-label">${card.label}</span>
+                    <span class="kpi-icon" aria-hidden="true">${card.icon}</span>
+                </div>
 
+                <div class="kpi-value">${card.value}</div>
 
-        const kpi =
-            data.kpi || {};
+                ${card.unit
+                    ? `<div class="kpi-unit">${card.unit}</div>`
+                    : ""}
 
-
-        element.innerHTML = `
-
-            <div class="kpi">
-                <span>Đơn hôm nay</span>
-                <strong>
-                    ${kpi.orders_today || 0}
-                </strong>
-                <small>đơn</small>
-            </div>
-
-            <div class="kpi">
-                <span>Doanh thu tháng</span>
-                <strong>
-                    ${money(kpi.monthly_sales)}
-                </strong>
-                <small>tổng sau giảm</small>
-            </div>
-
-            <div class="kpi">
-                <span>Còn phải thu</span>
-                <strong>
-                    ${money(kpi.receivable)}
-                </strong>
-                <small>công nợ đơn</small>
-            </div>
-
-            <div class="kpi">
-                <span>Cần nhập kho</span>
-                <strong>
-                    ${kpi.low_stock || 0}
-                </strong>
-                <small>nguyên liệu</small>
-            </div>
-
-        `;
+                <div class="kpi-divider"></div>
+                <div class="kpi-note">${card.note}</div>
+            </article>
+        `).join("");
     }
-
 
     // =====================================================
     // PRIORITY ORDERS
@@ -1899,6 +1920,585 @@
         );
 
 
+
+    // =====================================================
+    // EXPORT REVENUE / ORDERS / RECEIVABLES / INVENTORY
+    // Dán trước phần INITIALIZE
+    // =====================================================
+
+    const REPORT_PENDING = "Chờ xác nhận";
+    const REPORT_CANCELLED = "Hủy";
+
+    function reportNum(value) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : 0;
+    }
+
+    function reportDate(value) {
+        if (!value) return "";
+        const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "";
+
+        return [
+            date.getFullYear(),
+            String(date.getMonth() + 1).padStart(2, "0"),
+            String(date.getDate()).padStart(2, "0")
+        ].join("-");
+    }
+
+    function reportRevenue(order) {
+        const status = String(order.status || "").trim();
+
+        if (status === REPORT_PENDING) return 0;
+
+        if (status === REPORT_CANCELLED) {
+            return reportNum(
+                order.deposit ?? order.deposit_amount ?? order.amount_paid
+            );
+        }
+
+        return reportNum(order.total);
+    }
+
+    async function reportGet(url, keys) {
+        const response = await fetch(url, {
+            headers: { Accept: "application/json" }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Không thể tải dữ liệu từ ${url}`);
+        }
+
+        const result = await response.json();
+
+        if (Array.isArray(result)) return result;
+
+        for (const key of keys) {
+            if (Array.isArray(result?.[key])) return result[key];
+        }
+
+        return [];
+    }
+
+    function reportColumn(index) {
+        let name = "";
+        let n = index + 1;
+
+        while (n > 0) {
+            const remainder = (n - 1) % 26;
+            name = String.fromCharCode(65 + remainder) + name;
+            n = Math.floor((n - 1) / 26);
+        }
+
+        return name;
+    }
+
+    function reportEscape(value) {
+        return String(value ?? "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&apos;");
+    }
+
+    function reportSerial(dateValue) {
+        const date = new Date(`${dateValue}T00:00:00`);
+        if (Number.isNaN(date.getTime())) return null;
+
+        return Math.floor(date.getTime() / 86400000) + 25569;
+    }
+
+    function reportSheetXml(sheet) {
+        const allRows = [sheet.headers, ...sheet.rows];
+
+        const rowsXml = allRows.map((row, rowIndex) => {
+            const cells = row.map((value, colIndex) => {
+                const ref = `${reportColumn(colIndex)}${rowIndex + 1}`;
+
+                // Các cột types đang khai báo theo chỉ số bắt đầu từ 1.
+                const type = sheet.types?.[colIndex] || "text";
+
+                const style = rowIndex === 0 ? 1 :
+                    type === "money" ? 2 :
+                    type === "date" ? 3 :
+                    type === "percent" ? 4 :
+                    type === "number" ? 5 : 0;
+
+                if (rowIndex > 0 && type === "date") {
+                    const serial = reportSerial(value);
+
+                    if (serial !== null) {
+                        return `<c r="${ref}" s="${style}"><v>${serial}</v></c>`;
+                    }
+                }
+
+                if (
+                    rowIndex > 0 &&
+                    ["money", "number", "percent"].includes(type)
+                ) {
+                    return `<c r="${ref}" s="${style}"><v>${reportNum(value)}</v></c>`;
+                }
+
+                return `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${reportEscape(value)}</t></is></c>`;
+            }).join("");
+
+            return `<row r="${rowIndex + 1}">${cells}</row>`;
+        }).join("");
+
+        const widths = sheet.headers.map((header, index) => {
+            const width = Math.min(
+                35,
+                Math.max(12, String(header).length + 3)
+            );
+
+            return `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`;
+        }).join("");
+
+        const lastColumn = reportColumn(sheet.headers.length - 1);
+        const lastRow = allRows.length;
+
+        return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+        <dimension ref="A1:${lastColumn}${lastRow}"/>
+        <sheetViews>
+            <sheetView workbookViewId="0">
+                <pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>
+            </sheetView>
+        </sheetViews>
+        <cols>${widths}</cols>
+        <sheetData>${rowsXml}</sheetData>
+        <autoFilter ref="A1:${lastColumn}${lastRow}"/>
+    </worksheet>`;
+    }
+
+    function reportU16(n) {
+        return [n & 255, (n >>> 8) & 255];
+    }
+
+    function reportU32(n) {
+        return [
+            n & 255, (n >>> 8) & 255,
+            (n >>> 16) & 255, (n >>> 24) & 255
+        ];
+    }
+
+    function reportCrc32(bytes) {
+        let crc = -1;
+
+        for (let i = 0; i < bytes.length; i++) {
+            crc ^= bytes[i];
+
+            for (let j = 0; j < 8; j++) {
+                crc = (crc >>> 1) ^ (0xEDB88320 & -(crc & 1));
+            }
+        }
+
+        return (crc ^ -1) >>> 0;
+    }
+
+    function reportZip(files) {
+        const encoder = new TextEncoder();
+        const local = [];
+        const central = [];
+        let offset = 0;
+
+        for (const file of files) {
+            const name = encoder.encode(file.name);
+            const data = encoder.encode(file.data);
+            const crc = reportCrc32(data);
+
+            const header = new Uint8Array([
+                ...reportU32(0x04034b50),
+                ...reportU16(20), ...reportU16(0x0800),
+                ...reportU16(0), ...reportU16(0), ...reportU16(0),
+                ...reportU32(crc),
+                ...reportU32(data.length), ...reportU32(data.length),
+                ...reportU16(name.length), ...reportU16(0)
+            ]);
+
+            local.push(header, name, data);
+
+            const centralHeader = new Uint8Array([
+                ...reportU32(0x02014b50),
+                ...reportU16(20), ...reportU16(20),
+                ...reportU16(0x0800),
+                ...reportU16(0), ...reportU16(0), ...reportU16(0),
+                ...reportU32(crc),
+                ...reportU32(data.length), ...reportU32(data.length),
+                ...reportU16(name.length),
+                ...reportU16(0), ...reportU16(0),
+                ...reportU16(0), ...reportU16(0),
+                ...reportU32(0), ...reportU32(offset)
+            ]);
+
+            central.push(centralHeader, name);
+            offset += header.length + name.length + data.length;
+        }
+
+        const centralSize = central.reduce((sum, part) => sum + part.length, 0);
+
+        const end = new Uint8Array([
+            ...reportU32(0x06054b50),
+            ...reportU16(0), ...reportU16(0),
+            ...reportU16(files.length), ...reportU16(files.length),
+            ...reportU32(centralSize), ...reportU32(offset),
+            ...reportU16(0)
+        ]);
+
+        return new Blob([...local, ...central, end], {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        });
+    }
+
+    function reportMakeWorkbook(sheets) {
+        const files = [];
+        const sheetNames = sheets.map((sheet, index) => ({
+            ...sheet,
+            name: String(sheet.name || `Sheet${index + 1}`)
+                .slice(0, 31)
+                .replace(/[\\/?*[\]:]/g, "_")
+        }));
+
+        const overrides = sheetNames.map((_, i) =>
+            `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+        ).join("");
+
+        files.push({
+            name: "[Content_Types].xml",
+            data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+${overrides}</Types>`
+        });
+
+        files.push({
+            name: "_rels/.rels",
+            data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`
+        });
+
+        files.push({
+            name: "xl/workbook.xml",
+            data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets>${sheetNames.map((sheet, i) =>
+                `<sheet name="${reportEscape(sheet.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`
+            ).join("")}</sheets></workbook>`
+        });
+
+        files.push({
+            name: "xl/_rels/workbook.xml.rels",
+            data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+${sheetNames.map((_, i) =>
+                `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`
+            ).join("")}</Relationships>`
+        });
+
+        files.push({
+            name: "xl/styles.xml",
+            data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<fonts count="2">
+<font><sz val="11"/><name val="Arial"/></font>
+<font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Arial"/></font>
+</fonts>
+<fills count="3">
+<fill><patternFill patternType="none"/></fill>
+<fill><patternFill patternType="gray125"/></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FF315F4B"/><bgColor indexed="64"/></patternFill></fill>
+</fills>
+<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="6">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
+<xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+<xf numFmtId="14" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+<xf numFmtId="10" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+<xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+</cellXfs></styleSheet>`
+        });
+
+        sheetNames.forEach((sheet, i) => {
+            files.push({
+                name: `xl/worksheets/sheet${i + 1}.xml`,
+                data: reportSheetXml(sheet)
+            });
+        });
+
+        return reportZip(files);
+    }
+
+    function reportPeriodKey(date, period) {
+        if (!date) return "";
+        if (period === "day") return date;
+        if (period === "month") return date.slice(0, 7);
+        return date.slice(0, 4);
+    }
+
+    function reportOrderDate(order) {
+        return reportDate(order.created ?? order.created_at ?? order.order_date);
+    }
+
+    function reportMovementDate(movement) {
+        return reportDate(movement.date ?? movement.created ?? movement.created_at);
+    }
+
+    function reportMovementEffect(movement) {
+        const type = String(
+            movement.type ?? movement.movement_type ?? ""
+        ).toLowerCase();
+
+        const qty = reportNum(movement.qty ?? movement.quantity);
+
+        if (["in", "nhập", "nhap", "import"].includes(type)) return qty;
+
+        if ([
+            "out", "xuất", "xuat", "export",
+            "waste", "hao hụt", "hao hut"
+        ].includes(type)) return -qty;
+
+        return 0;
+    }
+
+    function reportInventoryAt(items, movements, cutoff) {
+        return items.map(item => {
+            const itemId = String(
+                item.id ?? item.item_id ?? item.material_id ?? ""
+            );
+
+            const currentStock = reportNum(
+                item.stock ?? item.current_stock ?? item.quantity
+            );
+
+            const laterMovement = movements.reduce((sum, movement) => {
+                const movementItemId = String(
+                    movement.itemId ?? movement.item_id ?? movement.material_id ?? ""
+                );
+
+                const date = reportMovementDate(movement);
+
+                if (movementItemId !== itemId || !date || date <= cutoff) {
+                    return sum;
+                }
+
+                return sum + reportMovementEffect(movement);
+            }, 0);
+
+            const stock = currentStock - laterMovement;
+            const cost = reportNum(
+                item.cost ?? item.unit_cost ?? item.last_cost ?? item.latest_cost
+            );
+
+            return {
+                id: itemId,
+                name: item.name ?? item.item_name ?? item.material_name ?? "",
+                category: item.category ?? item.group_name ?? "",
+                unit: item.unit ?? item.unit_name ?? "",
+                stock,
+                min: reportNum(item.min ?? item.min_stock ?? item.minimum_stock),
+                cost,
+                value: stock * cost
+            };
+        });
+    }
+
+    function reportPeriodKeys(orders, movements, period, today) {
+        const keys = new Set([reportPeriodKey(today, period)]);
+
+        orders.forEach(order => {
+            const date = reportOrderDate(order);
+            if (date) keys.add(reportPeriodKey(date, period));
+        });
+
+        movements.forEach(movement => {
+            const date = reportMovementDate(movement);
+            if (date) keys.add(reportPeriodKey(date, period));
+        });
+
+        return [...keys].filter(Boolean).sort();
+    }
+
+    function reportCutoff(key, period, today) {
+        let date = key;
+
+        if (period === "month") date = `${key}-31`;
+        if (period === "year") date = `${key}-12-31`;
+
+        // Clamp future period to today.
+        return date > today ? today : date;
+    }
+
+    function reportSummary(period, keys, orders, items, movements, today) {
+        const headers = [
+            period === "day" ? "Ngày" : period === "month" ? "Tháng" : "Năm",
+            "Doanh thu",
+            "Số đơn",
+            "Đơn chờ xác nhận",
+            "Đơn hủy",
+            "Dư nợ hiện tại",
+            "Giá trị tồn kho ước tính",
+            "Số NVL cần nhập"
+        ];
+
+        const rows = keys.map(key => {
+            const periodOrders = orders.filter(order =>
+                reportPeriodKey(reportOrderDate(order), period) === key
+            );
+
+            const stock = reportInventoryAt(
+                items, movements, reportCutoff(key, period, today)
+            );
+
+            return [
+                key,
+                periodOrders.reduce((sum, order) => sum + reportRevenue(order), 0),
+                periodOrders.length,
+                periodOrders.filter(o => o.status === REPORT_PENDING).length,
+                periodOrders.filter(o => o.status === REPORT_CANCELLED).length,
+                periodOrders.reduce((sum, order) =>
+                    sum + reportNum(order.balance ?? order.remaining ?? order.receivable), 0
+                ),
+                stock.reduce((sum, item) => sum + item.value, 0),
+                stock.filter(item => item.stock <= item.min).length
+            ];
+        });
+
+        return {
+            name: period === "day" ? "Bao_Cao_Ngay" :
+                  period === "month" ? "Bao_Cao_Thang" : "Bao_Cao_Nam",
+            headers,
+            types: {
+                1: "money", 2: "number", 3: "number", 4: "number",
+                5: "money", 6: "money", 7: "number"
+            },
+            rows
+        };
+    }
+
+    function reportInventorySheet(name, period, keys, items, movements, today) {
+        const headers = [
+            period === "day" ? "Ngày" : period === "month" ? "Tháng" : "Năm",
+            "Mã NVL", "Tên nguyên liệu", "Nhóm", "ĐVT",
+            "Tồn cuối kỳ ước tính", "Tồn tối thiểu",
+            "Đơn giá hiện tại", "Giá trị tồn ước tính", "Trạng thái"
+        ];
+
+        const rows = [];
+
+        keys.forEach(key => {
+            const stock = reportInventoryAt(
+                items, movements, reportCutoff(key, period, today)
+            );
+
+            stock.forEach(item => {
+                rows.push([
+                    key, item.id, item.name, item.category, item.unit,
+                    item.stock, item.min, item.cost, item.value,
+                    item.stock <= item.min ? "CẦN NHẬP" : "Bình thường"
+                ]);
+            });
+        });
+
+        return {
+            name,
+            headers,
+            types: { 5: "number", 6: "number", 7: "money", 8: "money" },
+            rows
+        };
+    }
+
+    async function exportRevenueReport() {
+        const button = document.getElementById("exportRevenueReportBtn");
+
+        if (button) {
+            button.disabled = true;
+            button.dataset.originalText = button.textContent;
+            button.textContent = "Đang tạo báo cáo...";
+        }
+
+        try {
+            const [orders, items, movements] = await Promise.all([
+                reportGet("/api/orders", ["orders", "data", "items"]),
+                reportGet("/api/inventory", ["inventory", "items", "data", "materials"]),
+                reportGet("/api/movements", ["movements", "data", "items"])
+            ]);
+
+            const today = todayISO();
+
+            const dailyKeys = reportPeriodKeys(orders, movements, "day", today);
+            const monthlyKeys = reportPeriodKeys(orders, movements, "month", today);
+            const yearlyKeys = reportPeriodKeys(orders, movements, "year", today);
+
+            const sheets = [
+                reportSummary("day", dailyKeys, orders, items, movements, today),
+                reportSummary("month", monthlyKeys, orders, items, movements, today),
+                reportSummary("year", yearlyKeys, orders, items, movements, today),
+                reportInventorySheet("Ton_Kho_Ngay", "day", dailyKeys, items, movements, today),
+                reportInventorySheet("Ton_Kho_Thang", "month", monthlyKeys, items, movements, today),
+                reportInventorySheet("Ton_Kho_Nam", "year", yearlyKeys, items, movements, today)
+            ];
+
+            const blob = reportMakeWorkbook(sheets);
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+
+            link.href = url;
+            link.download = `LinChau_Floral_Bao_Cao_Doanh_Thu_${today}.xlsx`;
+
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            showToast("Đã xuất báo cáo doanh thu và tồn kho.");
+        } catch (error) {
+            console.error("Export revenue report error:", error);
+            showToast(error.message || "Xuất báo cáo thất bại. Hãy kiểm tra API.");
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.textContent = button.dataset.originalText || "Báo cáo Excel";
+            }
+        }
+    }
+
+    function installRevenueReportButton() {
+        if (document.getElementById("exportRevenueReportBtn")) return;
+
+        const existingButton =
+            document.getElementById("quickExcelBtn") ||
+            document.getElementById("exportAllExcelBtn") ||
+            [...document.querySelectorAll("button, a")].find(element =>
+                /xuất excel|export excel/i.test(element.textContent || "")
+            );
+
+        if (!existingButton) {
+            console.warn("Không tìm thấy nút Xuất Excel để đặt nút báo cáo.");
+            return;
+        }
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.id = "exportRevenueReportBtn";
+        button.className = existingButton.className || "btn ghost";
+        button.textContent = "Xuất doanh thu và tồn kho";
+        button.title = "Xuất doanh thu, số đơn, dư nợ và tồn kho theo ngày/tháng/năm";
+        button.addEventListener("click", exportRevenueReport);
+
+        existingButton.insertAdjacentElement("afterend", button);
+    }
+
     // =====================================================
     // INITIALIZE
     // =====================================================
@@ -1912,6 +2512,8 @@
         showView(first);
     }
 
+    // Nút xuất báo cáo doanh thu đặt cạnh nút Xuất Excel.
+    installRevenueReportButton();
 
     // Dashboard
     loadDashboard();

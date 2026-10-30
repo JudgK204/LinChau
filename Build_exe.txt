@@ -1,3 +1,5 @@
+Hướng dẫn build lại app:
+
 venv\Scripts\activate
 pip install pyinstaller
 pyinstaller --clean LinChau.spec

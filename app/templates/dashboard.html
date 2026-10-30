@@ -34,7 +34,6 @@
     </header>
 
     <section id="dashboard" class="view active" data-view="dashboard">
-      <div class="notice"><strong>Dữ liệu lưu tại máy ở quán.</div>
       <div class="cards" id="kpiCards"></div>
       <div class="grid-2">
         <div class="panel"><div class="panel-head"><h2>Đơn cần xử lý</h2><button class="link-btn" data-go="orders">Xem đơn hàng</button></div><div id="priorityOrders" class="stack-list"></div></div>
@@ -59,12 +58,21 @@
           />
 
           <select
-            id="orderStatusFilter"
-            class="input"
+              id="orderStatusFilter"
+              class="input"
           >
-            <option value="">
-              Tất cả trạng thái
-            </option>
+              <option value="">Tất cả trạng thái</option>
+          </select>
+
+          <select
+              id="orderPaymentFilter"
+              class="input"
+          >
+              <option value="">Tất cả tình trạng thanh toán</option>
+              <option value="paid">Đã thanh toán</option>
+              <option value="unpaid">Chưa thanh toán</option>
+              <option value="deposited">Đã cọc</option>
+              <option value="not_deposited">Chưa cọc</option>
           </select>
 
           <input

@@ -186,6 +186,11 @@ def get_orders():
         .strip()
     )
 
+    payment_status = (
+        request.args.get("payment_status", "")
+        .strip()
+    )
+
     date_from = (
         request.args.get("from", "")
         .strip()
@@ -268,6 +273,36 @@ def get_orders():
 
         params["status"] = status
 
+    # =========================
+    # PAYMENT STATUS
+    # =========================
+
+    if payment_status == "paid":
+        # Đã thanh toán đủ
+        sql += """
+            AND COALESCE(o.total, 0) > 0
+            AND COALESCE(o.balance, 0) = 0
+        """
+
+    elif payment_status == "unpaid":
+        # Chưa thanh toán đủ, bao gồm cả đơn đã cọc
+        sql += """
+            AND COALESCE(o.balance, 0) > 0
+        """
+
+    elif payment_status == "deposited":
+        # Đã cọc nhưng vẫn còn phải thu
+        sql += """
+            AND COALESCE(o.deposit, 0) > 0
+            AND COALESCE(o.balance, 0) > 0
+        """
+
+    elif payment_status == "not_deposited":
+        # Chưa cọc và vẫn còn phải thu
+        sql += """
+            AND COALESCE(o.deposit, 0) = 0
+            AND COALESCE(o.balance, 0) > 0
+        """
     # =========================
     # DELIVERY DATE FROM
     # =========================
